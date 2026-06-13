@@ -23,9 +23,9 @@ app.use(express.json()); // Parses incoming JSON payloads
 
 // 2. MongoDB Connection
 mongoose.connect(process.env.MONGO_URI)
-    .then(() => console.log('🚀 Connected to MongoDB successfully.'))
+    .then(() => console.log(' Connected to MongoDB successfully.'))
     .catch((err) => {
-        console.error('❌ MongoDB connection error:', err.message);
+        console.error(' MongoDB connection error:', err.message);
         process.exit(1);
     });
 
@@ -176,5 +176,5 @@ io.on('connection', (socket) => {
 
 // Use server.listen instead of app.listen!
 server.listen(PORT, () => {
-    console.log(`🚀 Server + Sockets running on http://localhost:${PORT}`);
+    console.log(` Server + Sockets running on http://localhost:${PORT}`);
 });
