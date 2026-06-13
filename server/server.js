@@ -3,9 +3,18 @@ const express = require('express');
 const mongoose = require('mongoose');
 const cors = require('cors');
 const jwt = require('jsonwebtoken');
+const { Server } = require('socket.io');
+const http = require('http');
+
 const User = require('./models/User');
+const Message = require('./models/Message');
 
 const app = express();
+const server = http.createServer(app); // Create HTTP server for Socket.io
+const io = new Server(server, {
+    cors: { origin: "*" } // In production, replace with your client URL
+});
+
 const PORT = process.env.PORT || 5000;
 
 // 1. Middleware
@@ -105,7 +114,67 @@ app.post('/api/auth/login', async (req, res) => {
     }
 });
 
-// 4. Start Server
-app.listen(PORT, () => {
-    console.log(`📡 Auth Server running on http://localhost:${PORT}`);
+
+// --- SOCKET.IO LOGIC ---
+
+// 1. Socket Authentication Middleware
+io.use((socket, next) => {
+    const token = socket.handshake.auth.token;
+    if (!token) return next(new Error("Authentication error: No token provided"));
+
+    jwt.verify(token, process.env.JWT_SECRET, (err, decoded) => {
+        if (err) return next(new Error("Authentication error: Invalid token"));
+        socket.user = decoded; // Attach user info (id, username) to the socket
+        next();
+    });
+});
+
+// 2. Real-time Events
+io.on('connection', (socket) => {
+    console.log(`👤 User connected: ${socket.user.username}`);
+
+    socket.on('join_room', async (roomId) => {
+        socket.join(roomId);
+        console.log(`🏠 ${socket.user.username} joined room: ${roomId}`);
+
+        // Fetch last 50 messages for this room from MongoDB
+        const history = await Message.find({ room: roomId })
+            .sort({ createdAt: -1 })
+            .limit(50);
+        
+        socket.emit('message_history', history.reverse());
+    });
+
+    socket.on('send_message', async (data) => {
+        const { room, content } = data;
+
+        // Persist message to database
+        const newMessage = new Message({
+            room,
+            content,
+            sender: socket.user.id,
+            senderName: socket.user.username
+        });
+        await newMessage.save();
+
+        // Broadcast to everyone in the room (including sender)
+        io.to(room).emit('receive_message', newMessage);
+    });
+
+    socket.on('typing', (data) => {
+        // Broadcast "User is typing..." to everyone in the room except the sender
+        socket.to(data.room).emit('user_typing', { 
+            username: socket.user.username, 
+            isTyping: data.isTyping 
+        });
+    });
+
+    socket.on('disconnect', () => {
+        console.log(`🔌 User disconnected: ${socket.user.username}`);
+    });
+});
+
+// Use server.listen instead of app.listen!
+server.listen(PORT, () => {
+    console.log(`🚀 Server + Sockets running on http://localhost:${PORT}`);
 });
